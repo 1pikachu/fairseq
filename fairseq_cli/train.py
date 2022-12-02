@@ -309,12 +309,19 @@ def train(
     should_stop = False
     num_updates = trainer.get_num_updates()
     logger.info("Start iterating over samples")
+
+    total_time = 0.0
+    total_count = 0
     for i, samples in enumerate(progress):
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
-            log_output = trainer.train_step(samples)
+            log_output, duration = trainer.train_step(samples)
 
+        if i >= cfg.model.num_warmup:
+            total_time += duration
+            total_count += 1
+        print("iteration:{}, training time: {} sec.".format(i, duration))
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
@@ -327,13 +334,25 @@ def train(
                 metrics.reset_meters("train_inner")
 
         end_of_epoch = not itr.has_next()
-        valid_losses, should_stop = validate_and_save(
-            cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
-        )
+        #valid_losses, should_stop = validate_and_save(
+        #    cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
+        #)
+        if i >= cfg.model.num_iters:
+            should_stop = True
 
         if should_stop:
             break
 
+    batch_size = cfg.dataset.batch_size
+    avg_time = total_time / total_count
+    latency = avg_time / batch_size * 1000
+    perf = batch_size / avg_time
+    print("total time:{}, total count:{}".format(total_time, total_count))
+    print('%d epoch training latency: %6.2f ms'%(0, latency))
+    print('%d epoch training Throughput: %6.2f fps'%(0, perf))
+
+
+    valid_losses = torch.tensor(0)
     # log end-of-epoch stats
     logger.info("end of epoch {} (average epoch stats below)".format(epoch_itr.epoch))
     stats = get_training_stats(metrics.get_smoothed_values("train"))

@@ -36,6 +36,7 @@ def get_preprocessing_parser(default_task="translation"):
 
 def get_training_parser(default_task="translation"):
     parser = get_parser("Trainer", default_task)
+    add_oob_args(parser)
     add_dataset_args(parser, train=True)
     add_distributed_training_args(parser)
     add_model_args(parser)
@@ -392,6 +393,17 @@ def add_model_args(parser):
     # fmt: on
     return group
 
+def add_oob_args(parser):
+    group = parser.add_argument_group("OOB params")
+    group.add_argument('--precision', default="float32", type=str, help='precision')
+    group.add_argument('--channels_last', default=1, type=int, help='Use NHWC or not')
+    group.add_argument('--jit', action='store_true', default=False, help='enable JIT')
+    group.add_argument('--oob_profile', action='store_true', default=False, help='collect timeline')
+    group.add_argument('--num_iters', default=200, type=int, help='test iterations')
+    group.add_argument('--num_warmup', default=20, type=int, help='test warmup')
+    group.add_argument('--device', default='cpu', type=str, help='cpu, cuda or xpu')
+    group.add_argument('--nv_fuser', action='store_true', default=False, help='enable nv fuser')
+    return group
 
 def get_args(
     data: Union[str, Path],

@@ -795,6 +795,8 @@ class Trainer(object):
 
         # forward and backward pass
         logging_outputs, sample_size, ooms = [], 0, 0
+        print("---- samples length: ", len(samples))
+        start_time = time.time()
         for i, sample in enumerate(samples):  # delayed update loop
             sample, is_dummy_batch = self._prepare_sample(sample)
 
@@ -997,6 +999,7 @@ class Trainer(object):
                 logger.error("OOM during optimization, irrecoverable")
             raise e
 
+        end_time = time.time()
         # Some distributed wrappers (e.g., SlowMo) need access to the optimizer
         # after the step
         if hasattr(self.model, "perform_slowmo"):
@@ -1094,7 +1097,7 @@ class Trainer(object):
             )
 
         metrics.log_stop_time("train_wall")
-        return logging_output
+        return logging_output, end_time - start_time
 
     @metrics.aggregate("valid")
     def valid_step(self, sample, raise_oom=False):
@@ -1328,6 +1331,11 @@ class Trainer(object):
         elif self.tpu and is_dummy:
             # the dummy batch may not be on the appropriate device
             sample = utils.move_to_cuda(sample, device=self.device)
+
+        if self.cfg.model.device == "xpu":
+            sample = utils.move_to_cuda(sample, device=self.cfg.model.device)
+        elif self.cfg.model.device == "cuda":
+            sample = utils.move_to_cuda(sample)
 
         if not self.cfg.common.on_cpu_convert_precision:
             sample = self._fp_convert_sample(sample)
