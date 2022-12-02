@@ -328,7 +328,7 @@ def train(
     total_time = 0.0
     total_count = 0
     profile_len = min(len(progress), cfg.model.num_iters) // 2
-    if cfg.model.oob_profile and cfg.model.device == "xpu":
+    if cfg.model.profile and cfg.model.device == "xpu":
         for i, samples in enumerate(progress):
             with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
                 "train_step-%d" % i
@@ -339,7 +339,7 @@ def train(
             if i >= cfg.model.num_warmup:
                 total_time += duration
                 total_count += 1
-            if cfg.model.oob_profile and i == profile_len:
+            if cfg.model.profile and i == profile_len:
                 import pathlib
                 timeline_dir = str(pathlib.Path.cwd()) + '/timeline/'
                 if not os.path.exists(timeline_dir):
@@ -376,7 +376,7 @@ def train(
 
             if should_stop:
                 break
-    elif cfg.model.oob_profile and cfg.model.device == "cuda":
+    elif cfg.model.profile and cfg.model.device == "cuda":
         with torch.profiler.profile(
             activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
             record_shapes=True,
@@ -680,7 +680,7 @@ def cli_main(
             f"Started plasma server pid {server.server.pid} {cfg.common.plasma_path}"
         )
 
-    if args.profile:
+    if args.raw_profile:
         with torch.cuda.profiler.profile():
             with torch.autograd.profiler.emit_nvtx():
                 distributed_utils.call_main(cfg, main)

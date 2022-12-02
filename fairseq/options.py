@@ -398,7 +398,7 @@ def add_oob_args(parser):
     group.add_argument('--precision', default="float32", type=str, help='precision')
     group.add_argument('--channels_last', default=1, type=int, help='Use NHWC or not')
     group.add_argument('--jit', action='store_true', default=False, help='enable JIT')
-    group.add_argument('--oob_profile', action='store_true', default=False, help='collect timeline')
+    group.add_argument('--profile', action='store_true', default=False, help='collect timeline')
     group.add_argument('--num_iters', default=200, type=int, help='test iterations')
     group.add_argument('--num_warmup', default=20, type=int, help='test warmup')
     group.add_argument('--device', default='cpu', type=str, help='cpu, cuda or xpu')

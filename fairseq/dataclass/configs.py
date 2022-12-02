@@ -225,7 +225,7 @@ class CommonConfig(FairseqDataclass):
     quantization_config_path: Optional[str] = field(
         default=None, metadata={"help": "path to quantization config file"}
     )
-    profile: bool = field(
+    raw_profile: bool = field(
         default=False, metadata={"help": "enable autograd profiler emit_nvtx"}
     )
     reset_logging: bool = field(

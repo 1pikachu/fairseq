@@ -428,7 +428,7 @@ def hydra_main(cfg: InferConfig) -> Union[float, Tuple[float, Optional[float]]]:
     wer = float("inf")
 
     try:
-        if cfg.common.profile:
+        if cfg.common.raw_profile:
             with torch.cuda.profiler.profile():
                 with torch.autograd.profiler.emit_nvtx():
                     distributed_utils.call_main(cfg, main)

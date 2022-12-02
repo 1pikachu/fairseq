@@ -48,7 +48,7 @@ def _hydra_main(cfg: FairseqConfig, **kwargs) -> float:
     OmegaConf.set_struct(cfg, True)
 
     try:
-        if cfg.common.profile:
+        if cfg.common.raw_profile:
             with torch.cuda.profiler.profile():
                 with torch.autograd.profiler.emit_nvtx():
                     distributed_utils.call_main(cfg, pre_main, **kwargs)
