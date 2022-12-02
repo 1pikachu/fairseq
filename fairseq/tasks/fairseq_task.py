@@ -519,7 +519,7 @@ class FairseqTask(object):
                 loss, sample_size, logging_output = criterion(model, sample)
         elif device == "cuda":
             #with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
-            with torch.xpu.amp.autocast(enabled=True, dtype=datatype):
+            with torch.cuda.amp.autocast(enabled=True, dtype=datatype):
                 loss, sample_size, logging_output = criterion(model, sample)
         else:
             loss, sample_size, logging_output = criterion(model, sample)

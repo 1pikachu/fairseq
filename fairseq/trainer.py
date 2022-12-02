@@ -791,7 +791,7 @@ class Trainer(object):
             self.criterion.xpu()
             torch.xpu.optimize(model=self.model, 
                 optimizer=self.optimizer, dtype=self.datatype)
-        elif self.cfg.mode.device == "cuda":
+        elif self.cfg.model.device == "cuda":
             self.model.cuda()
             self.criterion.cuda()
 
