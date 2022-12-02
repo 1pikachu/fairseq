@@ -41,6 +41,21 @@ from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 
 
+def trace_handler(p):
+    output = p.key_averages().table(sort_by="self_cpu_time_total")
+    print(output)
+    import pathlib
+    timeline_dir = str(pathlib.Path.cwd()) + '/timeline/'
+    if not os.path.exists(timeline_dir):
+        try:
+            os.makedirs(timeline_dir)
+        except:
+            pass
+    timeline_file = timeline_dir + 'timeline-' + str(torch.backends.quantized.engine) + \
+            '-' + str(p.step_num) + '-' + str(os.getpid()) + '.json'
+    p.export_chrome_trace(timeline_file)
+
+
 def main(cfg: FairseqConfig) -> None:
     if isinstance(cfg, argparse.Namespace):
         cfg = convert_namespace_to_omegaconf(cfg)
@@ -312,36 +327,128 @@ def train(
 
     total_time = 0.0
     total_count = 0
-    for i, samples in enumerate(progress):
-        with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
-            "train_step-%d" % i
-        ):
-            log_output, duration = trainer.train_step(samples)
+    profile_len = min(len(progress), cfg.model.num_iters) // 2
+    if cfg.model.oob_profile and cfg.model.device == "xpu":
+        for i, samples in enumerate(progress):
+            with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
+                "train_step-%d" % i
+            ):
+                with torch.autograd.profiler_legacy.profile(True, use_xpu=True) as prof:
+                    log_output, duration = trainer.train_step(samples)
 
-        if i >= cfg.model.num_warmup:
-            total_time += duration
-            total_count += 1
-        print("iteration:{}, training time: {} sec.".format(i, duration))
-        if log_output is not None:  # not OOM, overflow, ...
-            # log mid-epoch stats
-            num_updates = trainer.get_num_updates()
-            if num_updates % cfg.common.log_interval == 0:
-                stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
-                progress.log(stats, tag="train_inner", step=num_updates)
+            if i >= cfg.model.num_warmup:
+                total_time += duration
+                total_count += 1
+            if cfg.model.oob_profile and i == profile_len:
+                import pathlib
+                timeline_dir = str(pathlib.Path.cwd()) + '/timeline/'
+                if not os.path.exists(timeline_dir):
+                    try:
+                        os.makedirs(timeline_dir)
+                    except:
+                        pass
+                torch.save(prof.key_averages().table(sort_by="self_xpu_time_total"),
+                    timeline_dir+'profile.pt')
+                torch.save(prof.key_averages(group_by_input_shape=True).table(),
+                    timeline_dir+'profile_detail.pt')
+                torch.save(prof.table(sort_by="id", row_limit=100000),
+                    timeline_dir+'profile_detail_withId.pt')
+                prof.export_chrome_trace(timeline_dir+"trace.json")
 
-                # reset mid-epoch stats after each log interval
-                # the end-of-epoch stats will still be preserved
-                metrics.reset_meters("train_inner")
+            print("iteration:{}, training time: {} sec.".format(i, duration))
+            if log_output is not None:  # not OOM, overflow, ...
+                # log mid-epoch stats
+                num_updates = trainer.get_num_updates()
+                if num_updates % cfg.common.log_interval == 0:
+                    stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
+                    progress.log(stats, tag="train_inner", step=num_updates)
 
-        end_of_epoch = not itr.has_next()
-        #valid_losses, should_stop = validate_and_save(
-        #    cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
-        #)
-        if i >= cfg.model.num_iters:
-            should_stop = True
+                    # reset mid-epoch stats after each log interval
+                    # the end-of-epoch stats will still be preserved
+                    metrics.reset_meters("train_inner")
 
-        if should_stop:
-            break
+            end_of_epoch = not itr.has_next()
+            #valid_losses, should_stop = validate_and_save(
+            #    cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
+            #)
+            if i >= cfg.model.num_iters:
+                should_stop = True
+
+            if should_stop:
+                break
+    elif cfg.model.oob_profile and cfg.model.device == "cuda":
+        with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+            record_shapes=True,
+            schedule=torch.profiler.schedule(
+                wait=profile_len,
+                warmup=2,
+                active=1,
+            ),
+            on_trace_ready=trace_handler,
+        ) as p:
+            for i, samples in enumerate(progress):
+                with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
+                    "train_step-%d" % i
+                ):
+                    log_output, duration = trainer.train_step(samples)
+
+                if i >= cfg.model.num_warmup:
+                    total_time += duration
+                    total_count += 1
+                p.step()
+                print("iteration:{}, training time: {} sec.".format(i, duration))
+                if log_output is not None:  # not OOM, overflow, ...
+                    # log mid-epoch stats
+                    num_updates = trainer.get_num_updates()
+                    if num_updates % cfg.common.log_interval == 0:
+                        stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
+                        progress.log(stats, tag="train_inner", step=num_updates)
+
+                        # reset mid-epoch stats after each log interval
+                        # the end-of-epoch stats will still be preserved
+                        metrics.reset_meters("train_inner")
+
+                end_of_epoch = not itr.has_next()
+                #valid_losses, should_stop = validate_and_save(
+                #    cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
+                #)
+                if i >= cfg.model.num_iters:
+                    should_stop = True
+
+                if should_stop:
+                    break
+    else:
+        for i, samples in enumerate(progress):
+            with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
+                "train_step-%d" % i
+            ):
+                log_output, duration = trainer.train_step(samples)
+
+            if i >= cfg.model.num_warmup:
+                total_time += duration
+                total_count += 1
+            print("iteration:{}, training time: {} sec.".format(i, duration))
+            if log_output is not None:  # not OOM, overflow, ...
+                # log mid-epoch stats
+                num_updates = trainer.get_num_updates()
+                if num_updates % cfg.common.log_interval == 0:
+                    stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
+                    progress.log(stats, tag="train_inner", step=num_updates)
+
+                    # reset mid-epoch stats after each log interval
+                    # the end-of-epoch stats will still be preserved
+                    metrics.reset_meters("train_inner")
+
+            end_of_epoch = not itr.has_next()
+            #valid_losses, should_stop = validate_and_save(
+            #    cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
+            #)
+            if i >= cfg.model.num_iters:
+                should_stop = True
+
+            if should_stop:
+                break
 
     batch_size = cfg.dataset.batch_size
     avg_time = total_time / total_count
