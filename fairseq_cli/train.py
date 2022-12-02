@@ -562,6 +562,11 @@ def cli_main(
 
     cfg = convert_namespace_to_omegaconf(args)
 
+    if cfg.model.device == "xpu":
+        import intel_extension_for_pytorch
+    elif cfg.model.device == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = False
+
     if cfg.common.use_plasma_view:
         server = PlasmaStore(path=cfg.common.plasma_path)
         logger.info(

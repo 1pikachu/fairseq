@@ -784,6 +784,17 @@ class Trainer(object):
         self.criterion.train()
         self.zero_grad()
 
+        self.datatype = torch.float16 if self.cfg.model.precision == "float16" else \
+            torch.bfloat16 if self.cfg.model.precision == "bfloat16" else torch.float32
+        if self.cfg.model.device == "xpu":
+            self.model.xpu()
+            self.criterion.xpu()
+            torch.xpu.optimize(model=self.model, 
+                optimizer=self.optimizer, dtype=self.datatype)
+        elif self.cfg.mode.device == "cuda":
+            self.model.cuda()
+            self.criterion.cuda()
+
         metrics.log_start_time("train_wall", priority=800, round=0)
 
         # If EMA is enabled through store_ema=True
@@ -830,6 +841,8 @@ class Trainer(object):
                         optimizer=self.optimizer,
                         update_num=self.get_num_updates(),
                         ignore_grad=is_dummy_batch,
+                        device=self.cfg.model.device,
+                        datatype=self.datatype,
                         **extra_kwargs,
                     )
                     del loss
@@ -999,7 +1012,12 @@ class Trainer(object):
                 logger.error("OOM during optimization, irrecoverable")
             raise e
 
+        if self.cfg.model.device == "xpu":
+            torch.xpu.synchronize()
+        elif self.cfg.model.device == "cuda":
+            torch.cuda.synchronize()
         end_time = time.time()
+
         # Some distributed wrappers (e.g., SlowMo) need access to the optimizer
         # after the step
         if hasattr(self.model, "perform_slowmo"):
