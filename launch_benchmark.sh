@@ -62,7 +62,6 @@ function generate_core {
 	elif [[ "${mode_name}" == "train" && "${device}" == "xpu" ]];then
 	    OOB_EXEC_HEADER=" IPEX_XPU_ONEDNN_LAYOUT=0 "
 	fi
-	# remove jit, longformers fail with "ValueError: not enough values to unpack (expected 2, got 1)"
         printf " ${OOB_EXEC_HEADER} \
 	    python train.py \
 	    	data-bin/iwslt14.tokenized.de-en --optimizer nag --lr 0.25 --clip-norm 0.1 \
